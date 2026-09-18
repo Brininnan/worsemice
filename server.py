@@ -37,7 +37,8 @@ async def game_loop():
                     round_time_left = 180   # ← СБРОС СРАЗУ
 
             if PLAYERS:
-                players_data = list(PLAYERS.values())
+                # Скрыть тех, кто сдал сыр в этом раунде
+                players_data = [p for p in PLAYERS.values() if not p.get("roundDone", False)]
                 await broadcast({
                     "type": "update",
                     "players": players_data,
