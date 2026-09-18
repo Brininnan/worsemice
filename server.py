@@ -34,6 +34,7 @@ async def game_loop():
                 else:
                     round_state = "countdown"
                     countdown_value = 3
+                    round_time_left = 180   # ← СБРОС СРАЗУ
 
             if PLAYERS:
                 players_data = list(PLAYERS.values())
@@ -108,6 +109,7 @@ async def handle_player(websocket):
                     if PLAYERS and all(p.get("roundDone", False) for p in PLAYERS.values()):
                         round_state = "countdown"
                         countdown_value = 3
+                        round_time_left = 180   # ← СБРОС
                     continue
 
                 PLAYERS[websocket]["x"] = data.get("x", PLAYERS[websocket]["x"])
