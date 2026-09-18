@@ -64,7 +64,7 @@ async def broadcast(message, exclude=None):
 
 
 async def handle_player(websocket):
-    global round_state, countdown_value
+    global round_state, countdown_value, round_time_left
     player_id = str(id(websocket))
 
     PLAYERS[websocket] = {
