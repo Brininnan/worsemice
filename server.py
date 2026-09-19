@@ -28,6 +28,14 @@ async def game_loop():
                     # Сброс флагов раунда у всех
                     for p in PLAYERS.values():
                         p["roundDone"] = False
+                        p["isShaman"] = False
+
+                    # Выбрать случайного шамана из всех игроков
+                    if PLAYERS:
+                        import random
+                        shaman_ws = random.choice(list(PLAYERS.keys()))
+                        PLAYERS[shaman_ws]["isShaman"] = True
+                        print(f"[ШАМАН] Выбран: {PLAYERS[shaman_ws].get('id')}")
             elif round_state == "playing":
                 if round_time_left > 0:
                     round_time_left -= 1
@@ -80,6 +88,7 @@ async def handle_player(websocket):
         "idleState": 0,
         "isAirborne": False,
         "emotion": None,
+        "isShaman": False,
         "nickname": f"Mouse_{player_id[-4:]}"
     }
 
@@ -100,17 +109,33 @@ async def handle_player(websocket):
             try:
                 data = json.loads(message)
 
-                # === ОБРАБОТКА СДАЧИ СЫРА ===
+                                                # === ОБРАБОТКА СДАЧИ СЫРА ===
                 if data.get("action") == "deliver":
                     PLAYERS[websocket]["hasCheese"] = False
                     PLAYERS[websocket]["cheese_delivered"] += 1
                     PLAYERS[websocket]["roundDone"] = True
+                    PLAYERS[websocket]["x"] = 100
+                    PLAYERS[websocket]["y"] = 300
+
+                    # Сразу разослать — чтобы другие увидели обновление
+                    if PLAYERS:
+                        players_data = [p for p in PLAYERS.values() if not p.get("roundDone", False)]
+                        await broadcast({
+                            "type": "update",
+                            "players": players_data,
+                            "roundState": round_state,
+                            "countdownValue": countdown_value,
+                            "roundTime": round_time_left
+                        })
 
                     # Все сдали?
                     if PLAYERS and all(p.get("roundDone", False) for p in PLAYERS.values()):
                         round_state = "countdown"
                         countdown_value = 3
-                        round_time_left = 180   # ← СБРОС
+                        round_time_left = 180
+                        # Сбросить шамана
+                        for p in PLAYERS.values():
+                            p["isShaman"] = False
                     continue
 
                 PLAYERS[websocket]["x"] = data.get("x", PLAYERS[websocket]["x"])
