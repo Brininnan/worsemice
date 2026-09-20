@@ -2,13 +2,75 @@ import asyncio
 import json
 import websockets
 import os
+from supabase import create_client
+import bcrypt
 
+# === ПОДКЛЮЧЕНИЕ К SUPABASE ===
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    print("[ОШИБКА] SUPABASE_URL или SUPABASE_KEY не заданы")
+    supabase = None
+else:
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    print(f"[OK] Supabase подключён: {SUPABASE_URL}")
+
+# === ИГРОВЫЕ ДАННЫЕ ===
 PLAYERS = {}
 
 round_state = "countdown"
 countdown_value = 3
 round_time_left = 180
 
+
+# === ФУНКЦИИ ДЛЯ РАБОТЫ С БАЗОЙ ===
+
+def register_player(nickname, password):
+    """Создать нового игрока. Возвращает (успех, сообщение)."""
+    if supabase is None:
+        return False, "База не подключена"
+
+    # Проверяем, есть ли уже такой ник
+    existing = supabase.table("users").select("id").eq("nickname", nickname).execute()
+    if existing.data:
+        return False, "Этот ник уже занят"
+
+    # Хешируем пароль
+    password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+    # Создаём запись
+    try:
+        supabase.table("users").insert({
+            "nickname": nickname,
+            "password_hash": password_hash
+        }).execute()
+        return True, "Регистрация успешна"
+    except Exception as e:
+        return False, f"Ошибка базы: {e}"
+
+
+def login_player(nickname, password):
+    """Проверить логин и пароль. Возвращает (успех, сообщение)."""
+    if supabase is None:
+        return False, "База не подключена"
+
+    # Ищем игрока
+    result = supabase.table("users").select("*").eq("nickname", nickname).execute()
+    if not result.data:
+        return False, "Игрок не найден"
+
+    player = result.data[0]
+    stored_hash = player["password_hash"].encode()
+
+    # Проверяем пароль
+    if bcrypt.checkpw(password.encode(), stored_hash):
+        return True, "Вход выполнен"
+    else:
+        return False, "Неверный пароль"
+
+
+# === ИГРОВОЙ ЦИКЛ ===
 
 async def game_loop():
     global round_state, countdown_value, round_time_left
@@ -25,12 +87,10 @@ async def game_loop():
                 if countdown_value <= 0:
                     round_state = "playing"
                     round_time_left = 180
-                    # Сброс флагов раунда у всех
                     for p in PLAYERS.values():
                         p["roundDone"] = False
                         p["isShaman"] = False
 
-                    # Выбрать случайного шамана из всех игроков
                     if PLAYERS:
                         import random
                         shaman_ws = random.choice(list(PLAYERS.keys()))
@@ -42,10 +102,9 @@ async def game_loop():
                 else:
                     round_state = "countdown"
                     countdown_value = 3
-                    round_time_left = 180   # ← СБРОС СРАЗУ
+                    round_time_left = 180
 
             if PLAYERS:
-                # Скрыть тех, кто сдал сыр в этом раунде
                 players_data = [p for p in PLAYERS.values() if not p.get("roundDone", False)]
                 await broadcast({
                     "type": "update",
@@ -89,7 +148,8 @@ async def handle_player(websocket):
         "isAirborne": False,
         "emotion": None,
         "isShaman": False,
-        "nickname": f"Mouse_{player_id[-4:]}"
+        "nickname": None,
+        "logged_in": False
     }
 
     print(f"[+] Игрок подключился: {player_id}")
@@ -109,7 +169,57 @@ async def handle_player(websocket):
             try:
                 data = json.loads(message)
 
-                                                # === ОБРАБОТКА СДАЧИ СЫРА ===
+                # === РЕГИСТРАЦИЯ ===
+                if data.get("type") == "register":
+                    nickname = data.get("nickname", "").strip()
+                    password = data.get("password", "")
+
+                    if not nickname or not password:
+                        await websocket.send(json.dumps({
+                            "type": "register_result",
+                            "success": False,
+                            "message": "Заполните все поля"
+                        }))
+                        continue
+
+                    success, msg = register_player(nickname, password)
+                    if success:
+                        PLAYERS[websocket]["nickname"] = nickname
+                        PLAYERS[websocket]["logged_in"] = True
+                        PLAYERS[websocket]["id"] = nickname
+                    await websocket.send(json.dumps({
+                        "type": "register_result",
+                        "success": success,
+                        "message": msg
+                    }))
+                    continue
+
+                # === ЛОГИН ===
+                if data.get("type") == "login":
+                    nickname = data.get("nickname", "").strip()
+                    password = data.get("password", "")
+
+                    if not nickname or not password:
+                        await websocket.send(json.dumps({
+                            "type": "login_result",
+                            "success": False,
+                            "message": "Заполните все поля"
+                        }))
+                        continue
+
+                    success, msg = login_player(nickname, password)
+                    if success:
+                        PLAYERS[websocket]["nickname"] = nickname
+                        PLAYERS[websocket]["logged_in"] = True
+                        PLAYERS[websocket]["id"] = nickname
+                    await websocket.send(json.dumps({
+                        "type": "login_result",
+                        "success": success,
+                        "message": msg
+                    }))
+                    continue
+
+                # === СДАЧА СЫРА ===
                 if data.get("action") == "deliver":
                     PLAYERS[websocket]["hasCheese"] = False
                     PLAYERS[websocket]["cheese_delivered"] += 1
@@ -117,7 +227,6 @@ async def handle_player(websocket):
                     PLAYERS[websocket]["x"] = 100
                     PLAYERS[websocket]["y"] = 300
 
-                    # Сразу разослать — чтобы другие увидели обновление
                     if PLAYERS:
                         players_data = [p for p in PLAYERS.values() if not p.get("roundDone", False)]
                         await broadcast({
@@ -128,16 +237,15 @@ async def handle_player(websocket):
                             "roundTime": round_time_left
                         })
 
-                    # Все сдали?
                     if PLAYERS and all(p.get("roundDone", False) for p in PLAYERS.values()):
                         round_state = "countdown"
                         countdown_value = 3
                         round_time_left = 180
-                        # Сбросить шамана
                         for p in PLAYERS.values():
                             p["isShaman"] = False
                     continue
 
+                # === ОБЫЧНОЕ ОБНОВЛЕНИЕ ===
                 PLAYERS[websocket]["x"] = data.get("x", PLAYERS[websocket]["x"])
                 PLAYERS[websocket]["y"] = data.get("y", PLAYERS[websocket]["y"])
                 PLAYERS[websocket]["facingRight"] = data.get("facingRight", PLAYERS[websocket]["facingRight"])
@@ -146,6 +254,7 @@ async def handle_player(websocket):
                 PLAYERS[websocket]["idleState"] = data.get("idleState", PLAYERS[websocket]["idleState"])
                 PLAYERS[websocket]["isAirborne"] = data.get("isAirborne", PLAYERS[websocket]["isAirborne"])
                 PLAYERS[websocket]["emotion"] = data.get("emotion", PLAYERS[websocket]["emotion"])
+
             except json.JSONDecodeError:
                 print(f"[!] Ошибка декодирования JSON от {player_id}")
 
