@@ -169,7 +169,7 @@ async def handle_player(websocket):
             try:
                 data = json.loads(message)
 
-                # === РЕГИСТРАЦИЯ ===
+                               # === РЕГИСТРАЦИЯ ===
                 if data.get("type") == "register":
                     nickname = data.get("nickname", "").strip()
                     password = data.get("password", "")
@@ -178,7 +178,8 @@ async def handle_player(websocket):
                         await websocket.send(json.dumps({
                             "type": "register_result",
                             "success": False,
-                            "message": "Заполните все поля"
+                            "message": "Заполните все поля",
+                            "nickname": None
                         }))
                         continue
 
@@ -188,25 +189,25 @@ async def handle_player(websocket):
                         PLAYERS[websocket]["logged_in"] = True
                         PLAYERS[websocket]["id"] = nickname
                     await websocket.send(json.dumps({
-    "type": "register_result",
-    "success": success,
-    "message": msg,
-    "nickname": nickname if success else None
-}))
+                        "type": "register_result",
+                        "success": success,
+                        "message": msg,
+                        "nickname": nickname if success else None
+                    }))
                     continue
 
-                # === ЛОГИН ===
+                                # === ЛОГИН ===
                 if data.get("type") == "login":
                     nickname = data.get("nickname", "").strip()
                     password = data.get("password", "")
 
                     if not nickname or not password:
                         await websocket.send(json.dumps({
-    "type": "login_result",
-    "success": success,
-    "message": msg,
-    "nickname": nickname if success else None
-}))
+                            "type": "login_result",
+                            "success": False,
+                            "message": "Заполните все поля",
+                            "nickname": None
+                        }))
                         continue
 
                     success, msg = login_player(nickname, password)
@@ -217,7 +218,8 @@ async def handle_player(websocket):
                     await websocket.send(json.dumps({
                         "type": "login_result",
                         "success": success,
-                        "message": msg
+                        "message": msg,
+                        "nickname": nickname if success else None
                     }))
                     continue
 
