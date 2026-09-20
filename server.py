@@ -149,7 +149,8 @@ async def handle_player(websocket):
         "emotion": None,
         "isShaman": False,
         "nickname": None,
-        "logged_in": False
+        "logged_in": False,
+        "role_code": None
     }
 
     print(f"[+] Игрок подключился: {player_id}")
@@ -169,7 +170,7 @@ async def handle_player(websocket):
             try:
                 data = json.loads(message)
 
-                               # === РЕГИСТРАЦИЯ ===
+                         # === РЕГИСТРАЦИЯ ===
                 if data.get("type") == "register":
                     nickname = data.get("nickname", "").strip()
                     password = data.get("password", "")
@@ -184,19 +185,26 @@ async def handle_player(websocket):
                         continue
 
                     success, msg = register_player(nickname, password)
+                    role_code = None
                     if success:
                         PLAYERS[websocket]["nickname"] = nickname
                         PLAYERS[websocket]["logged_in"] = True
                         PLAYERS[websocket]["id"] = nickname
+                        user_row = supabase.table("users").select("role_code").eq("nickname", nickname).execute()
+                        if user_row.data:
+                            role_code = user_row.data[0].get("role_code")
+                        PLAYERS[websocket]["role_code"] = role_code
+
                     await websocket.send(json.dumps({
                         "type": "register_result",
                         "success": success,
                         "message": msg,
-                        "nickname": nickname if success else None
+                        "nickname": nickname if success else None,
+                        "role_code": role_code
                     }))
                     continue
 
-                                # === ЛОГИН ===
+                              # === ЛОГИН ===
                 if data.get("type") == "login":
                     nickname = data.get("nickname", "").strip()
                     password = data.get("password", "")
@@ -211,15 +219,22 @@ async def handle_player(websocket):
                         continue
 
                     success, msg = login_player(nickname, password)
+                    role_code = None
                     if success:
                         PLAYERS[websocket]["nickname"] = nickname
                         PLAYERS[websocket]["logged_in"] = True
                         PLAYERS[websocket]["id"] = nickname
+                        user_row = supabase.table("users").select("role_code").eq("nickname", nickname).execute()
+                        if user_row.data:
+                            role_code = user_row.data[0].get("role_code")
+                        PLAYERS[websocket]["role_code"] = role_code
+
                     await websocket.send(json.dumps({
                         "type": "login_result",
                         "success": success,
                         "message": msg,
-                        "nickname": nickname if success else None
+                        "nickname": nickname if success else None,
+                        "role_code": role_code
                     }))
                     continue
 
