@@ -89,13 +89,7 @@ async def game_loop():
                     round_time_left = 180
                     for p in PLAYERS.values():
                         p["roundDone"] = False
-                        p["isShaman"] = False
 
-                    if PLAYERS:
-                        import random
-                        shaman_ws = random.choice(list(PLAYERS.keys()))
-                        PLAYERS[shaman_ws]["isShaman"] = True
-                        print(f"[ШАМАН] Выбран: {PLAYERS[shaman_ws].get('id')}")
             elif round_state == "playing":
                 if round_time_left > 0:
                     round_time_left -= 1
@@ -260,8 +254,6 @@ async def handle_player(websocket):
                         round_state = "countdown"
                         countdown_value = 3
                         round_time_left = 180
-                        for p in PLAYERS.values():
-                            p["isShaman"] = False
                     continue
 
                 # === ОБЫЧНОЕ ОБНОВЛЕНИЕ ===
