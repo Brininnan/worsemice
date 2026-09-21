@@ -16,6 +16,30 @@ else:
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
     print(f"[OK] Supabase подключён: {SUPABASE_URL}")
 
+    # === XP И УРОВНИ ===
+
+def xp_for_level(level):
+    """Сколько XP нужно для перехода с 'level' на 'level+1'."""
+    if level == 1:
+        return 60
+    elif level < 40:  # Уровни 2-39
+        return 60 + (level - 1) * 10
+    elif level < 70:  # Уровни 40-69
+        return 60 + 38 * 10 + (level - 39) * 15
+    else:             # Уровни 70+
+        return 60 + 38 * 10 + 30 * 15 + (level - 69) * 20
+
+
+def add_xp(player, amount):
+    """Добавить XP игроку. Возвращает True, если уровень повысился."""
+    player["xp"] += amount
+    leveled_up = False
+    while player["xp"] >= xp_for_level(player["level"]):
+        player["xp"] -= xp_for_level(player["level"])
+        player["level"] += 1
+        leveled_up = True
+    return leveled_up
+
 # === ИГРОВЫЕ ДАННЫЕ ===
 PLAYERS = {}
 
@@ -89,6 +113,7 @@ async def game_loop():
                     round_time_left = 180
                     for p in PLAYERS.values():
                         p["roundDone"] = False
+                        p["round_place"] = 0
 
             elif round_state == "playing":
                 if round_time_left > 0:
@@ -144,7 +169,12 @@ async def handle_player(websocket):
         "isShaman": False,
         "nickname": None,
         "logged_in": False,
-        "role_code": None
+        "role_code": None,
+        "xp": 0,
+        "level": 1,
+        "cheese_total": 0,
+        "round_place": 0,
+        "shaman_points": 0
     }
 
     print(f"[+] Игрок подключился: {player_id}")
@@ -232,13 +262,51 @@ async def handle_player(websocket):
                     }))
                     continue
 
-                # === СДАЧА СЫРА ===
+                                                                # === СДАЧА СЫРА ===
                 if data.get("action") == "deliver":
+                    print(f"[DEBUG] Получена команда deliver от {PLAYERS[websocket]['id']}!")
+                    
                     PLAYERS[websocket]["hasCheese"] = False
                     PLAYERS[websocket]["cheese_delivered"] += 1
+                    PLAYERS[websocket]["cheese_total"] += 1
                     PLAYERS[websocket]["roundDone"] = True
                     PLAYERS[websocket]["x"] = 100
                     PLAYERS[websocket]["y"] = 300
+
+                    # Считаем место в раунде среди сдавших
+                    already_done = sum(1 for p in PLAYERS.values() if p.get("roundDone", False) and p is not PLAYERS[websocket])
+                    place = already_done + 1
+
+                    # XP по месту
+                    if place == 1:
+                        gained_xp = 30
+                    elif place == 2:
+                        gained_xp = 26
+                    elif place == 3:
+                        gained_xp = 22
+                    else:
+                        gained_xp = 16
+
+                    PLAYERS[websocket]["round_place"] = place
+                    
+                    # === НАЧИСЛЕНИЕ ОПЫТА ===
+                    old_level = PLAYERS[websocket]["level"]
+                    add_xp(PLAYERS[websocket], gained_xp)
+                    PLAYERS[websocket]["shaman_points"] += gained_xp
+
+                    print(f"[XP] Игрок {PLAYERS[websocket]['id']} получил {gained_xp} XP за {place} место. Всего XP: {PLAYERS[websocket]['xp']}, Уровень: {PLAYERS[websocket]['level']}")
+
+                    # Отправляем личное уведомление игроку
+                    try:
+                        await websocket.send(json.dumps({
+                            "type": "xp_gained",
+                            "amount": gained_xp,
+                            "place": place,
+                            "total_xp": PLAYERS[websocket]["xp"],
+                            "level": PLAYERS[websocket]["level"]
+                        }))
+                    except Exception as e:
+                        print(f"[ERROR] Не удалось отправить xp_gained: {e}")
 
                     if PLAYERS:
                         players_data = [p for p in PLAYERS.values() if not p.get("roundDone", False)]
