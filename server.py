@@ -270,8 +270,6 @@ async def handle_player(websocket):
                     PLAYERS[websocket]["cheese_delivered"] += 1
                     PLAYERS[websocket]["cheese_total"] += 1
                     PLAYERS[websocket]["roundDone"] = True
-                    PLAYERS[websocket]["x"] = 100
-                    PLAYERS[websocket]["y"] = 300
 
                     # Считаем место в раунде среди сдавших
                     already_done = sum(1 for p in PLAYERS.values() if p.get("roundDone", False) and p is not PLAYERS[websocket])
