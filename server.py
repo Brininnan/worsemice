@@ -124,7 +124,7 @@ async def game_loop():
                     round_time_left = 180
 
             if PLAYERS:
-                players_data = [p for p in PLAYERS.values() if not p.get("roundDone", False)]
+                players_data = list(PLAYERS.values())  # ← Отправляем ВСЕХ
                 await broadcast({
                     "type": "update",
                     "players": players_data,
@@ -309,7 +309,7 @@ async def handle_player(websocket):
                         print(f"[ERROR] Не удалось отправить xp_gained: {e}")
 
                     if PLAYERS:
-                        players_data = [p for p in PLAYERS.values() if not p.get("roundDone", False)]
+                        players_data = list(PLAYERS.values())  # ← Отправляем ВСЕХ
                         await broadcast({
                             "type": "update",
                             "players": players_data,
